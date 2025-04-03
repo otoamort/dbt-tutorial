@@ -1,0 +1,63 @@
+name: dbt CI/CD for BigQuery
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+
+jobs:
+  dbt-checks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dbt
+        run: |
+          pip install dbt-core dbt-bigquery
+
+      - name: Authenticate to Google Cloud
+        run: |
+          echo '${{ secrets.BIGQUERY_SERVICE_ACCOUNT_JSON }}' > /tmp/gcp_key.json
+          export GOOGLE_APPLICATION_CREDENTIALS="/tmp/gcp_key.json"
+
+      - name: Configure dbt Profile
+        run: |
+          mkdir -p ~/.dbt
+          cat > ~/.dbt/profiles.yml <<EOF
+          jaffle_shop:
+            outputs:
+              dev:
+                dataset: dbt_oamorto
+                job_execution_timeout_seconds: 300
+                job_retries: 1
+                keyfile: /tmp/gcp_key.json
+                location: US
+                method: service-account
+                priority: interactive
+                project: dbt-learn-455610-d9
+                threads: 1
+                type: bigquery
+            target: dev
+          EOF
+
+      - name: Verify dbt Connection
+        run: dbt debug
+
+      - name: Run dbt Tests
+        run: dbt test
+
+      - name: Run dbt Models (Only on main branch)
+        if: github.ref == 'refs/heads/main'
+        run: dbt run
